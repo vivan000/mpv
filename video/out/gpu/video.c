@@ -2210,6 +2210,32 @@ static void pass_convert_yuv(struct gl_video *p)
     gl_sc_uniform_mat3(sc, "colormatrix", true, &m.m[0][0]);
     gl_sc_uniform_vec3(sc, "colormatrix_c", m.c);
 
+    GLSL(float randx = texture(dither, gl_FragCoord.xy / 64.0).r;)
+    GLSL(float randy = texture(dither, gl_FragCoord.yx / 64.0).r;)
+    GLSL(vec2 randomShift = floor(vec2(randx, randy) * 14.0 + 1.0);)
+
+    GLSL(vec2 x0 = randomShift * pixel_size0.x;)
+    GLSL(vec2 y0 = randomShift * pixel_size0.y;)
+    GLSL(vec2 x1 = randomShift * pixel_size1.x;)
+    GLSL(vec2 y1 = randomShift * pixel_size1.y;)
+
+    GLSL(vec3 pix0 = color.rgb;)
+    GLSL(vec3 pix1 = vec3(vec4(texture(texture0, vec2(texcoord0.x - x0.x, texcoord0.y - y0.y))).r, vec4(texture(texture1, vec2(texcoord1.x - x1.x, texcoord1.y - y1.y))).rg);)
+    GLSL(vec3 pix2 = vec3(vec4(texture(texture0, vec2(texcoord0.x - x0.y, texcoord0.y + y0.x))).r, vec4(texture(texture1, vec2(texcoord1.x - x1.y, texcoord1.y + y1.x))).rg);)
+    GLSL(vec3 pix3 = vec3(vec4(texture(texture0, vec2(texcoord0.x + x0.x, texcoord0.y + y0.y))).r, vec4(texture(texture1, vec2(texcoord1.x + x1.x, texcoord1.y + y1.y))).rg);)
+    GLSL(vec3 pix4 = vec3(vec4(texture(texture0, vec2(texcoord0.x + x0.y, texcoord0.y - y0.x))).r, vec4(texture(texture1, vec2(texcoord1.x + x1.y, texcoord1.y - y1.x))).rg);)
+
+    GLSL(vec3 avg = (pix1 + pix3) * 0.25 + (pix2 + pix4) * 0.25;)
+    GLSL(vec3 avgDif = abs (avg - pix0);)
+    GLSL(vec3 maxDif = max (max (abs (pix1 - pix0), abs (pix2 - pix0)), max (abs (pix3 - pix0), abs (pix4 - pix0)));)
+    GLSL(vec3 midDif1 = abs (pix1 + pix3 - 2.0 * pix0);)
+    GLSL(vec3 midDif2 = abs (pix2 + pix4 - 2.0 * pix0);)
+
+    GLSL(vec3 debandThresh = vec3(-225.0, -112.5, -231.81);)
+
+    GLSL(vec3 factor = pow (clamp (avgDif * debandThresh.x + 3.0, 0.0, 1.0) * clamp (maxDif * debandThresh.y + 3.0, 0.0, 1.0) * clamp (midDif1 * debandThresh.z + 3.0, 0.0, 1.0) * clamp (midDif2 * debandThresh.z + 3.0, 0.0, 1.0), vec3 (0.1));)
+    GLSL(color.rgb = mix (pix0, avg, factor).rgb;)
+
     GLSL(color.rgb = mat3(colormatrix) * color.rgb + colormatrix_c;)
 
     if (p->image_params.color.space == MP_CSP_BT_2020_C) {
